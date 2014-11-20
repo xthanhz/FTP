@@ -11,30 +11,49 @@ using namespace std;
 SOCKET Socket;
 WSADATA Winsock;
 sockaddr_in Addr;	//address
-char* str = "Trying to connect to server!";	//string to echo
 char Buffer[1056];	//data buffer
 char *prt = Buffer;		//pointer to buffer
 int Addrlen = sizeof(Addr);
-int Result;
+int SendResult;
+int RecieveResult;
 
 void recieve(){
+	char* msg = "File Recieved";	//string to echo
 	do {
+		RecieveResult = recv(Socket, Buffer, 256, 0);
+		if (RecieveResult > 0) {
+			printf("Bytes received: %d\n", RecieveResult);
 
-		Result = recv(Socket, Buffer, 256, 0);
+			// Echo the buffer back to the sender
+			SendResult = send(Socket, msg, (int)strlen(msg), 0);
 
-		if (Result > 0){
-			printf("Bytes received: %d\n", Result);
+			//send error check
+			if (SendResult == SOCKET_ERROR) {
+				cout << "Sending Error" << endl;
+				closesocket(Socket);
+				WSACleanup();
+				system("exit");
+			}
+			printf("Bytes sent: %d\n", SendResult);
+
 		}
-		else if (Result == 0){
+		else if (RecieveResult == 0){
 			printf("Message Recieve: ");
 			for (int i = 0; i < sizeof(Buffer); i++)
 				cout << Buffer[i];
-			printf("\nConnection closed\n");
-		}
-		else
-			printf("recv failed with error: %d\n", WSAGetLastError());
 
-	} while (Result > 0);
+			printf("\nConnection closing...\n");
+			printf("\nListening to new clients...\n");
+			closesocket(Socket);
+		}
+		else  {
+			printf("recv failed with error: %d\n", WSAGetLastError());
+			closesocket(Socket);
+			WSACleanup();
+			system("exit");
+		}
+
+	} while (RecieveResult > 0);
 }
 
 void send(string filename){
@@ -51,10 +70,10 @@ void send(string filename){
 	infile.read(newfilename, size);     //read file to buffer
 	infile.close();     //close file
 
-	Result = send(Socket, newfilename, (int)strlen(newfilename), 0);
+	SendResult = send(Socket, newfilename, (int)strlen(newfilename), 0);
 
 	//check if sent correctly
-	if (Result == SOCKET_ERROR) {
+	if (SendResult == SOCKET_ERROR) {
 		cout << "Sending Fail" << endl;;
 		closesocket(Socket);
 		WSACleanup();
@@ -62,42 +81,61 @@ void send(string filename){
 	}
 
 	//print byte being sent
-	printf("Bytes Sent: %ld\n", Result);
+	printf("Bytes Sent: %ld\n", SendResult);
 
 	//Close sending
-	Result = shutdown(Socket, SD_SEND);
-	if (Result == SOCKET_ERROR) {
+	SendResult = shutdown(Socket, SD_SEND);
+	if (SendResult == SOCKET_ERROR) {
 		printf("send failed with error: %d\n", WSAGetLastError());
 		closesocket(Socket);
 		WSACleanup();
 		system("exit");
 	}
 
-	recieve();
+	do {
+
+		RecieveResult = recv(Socket, Buffer, 256, 0);
+
+		if (RecieveResult > 0){
+			printf("Bytes received: %d\n", RecieveResult);
+		}
+		else if (RecieveResult == 0){
+			printf("Message Recieve: ");
+			for (int i = 0; i < sizeof(Buffer); i++)
+				cout << Buffer[i];
+			printf("\nConnection closed\n");
+		}
+		else
+			printf("recv failed with error: %d\n", WSAGetLastError());
+
+	} while (RecieveResult > 0);
 }
 
+void open_socket(const char* address, int port, SOCKET soc){
+	soc = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);		// initalize socket 
+
+	ZeroMemory(&Addr, sizeof(Addr));    // c lear the struct
+	Addr.sin_family = AF_INET;    // set the address family
+
+	Addr.sin_addr.s_addr = inet_addr(address);	// set the address
+	Addr.sin_port = htons(port);    // set the port
+
+	//connect to server
+	if (connect(soc, (sockaddr*)&Addr, sizeof(Addr)) < 0)
+	{
+		cout << "Connection failed !" << endl;
+		system("pause");
+		system("exit");
+	}
+
+	cout << "Connection successful !\n" << endl;
+}
 
 int main(){
 
 	WSAStartup(MAKEWORD(2, 2), &Winsock);    // Start Winsock
 
-	Socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);		// initalize socket 
-
-	ZeroMemory(&Addr, sizeof(Addr));    // c lear the struct
-	Addr.sin_family = AF_INET;    // set the address family
-	
-	Addr.sin_addr.s_addr = inet_addr("127.0.0.1");	// set the address
-	Addr.sin_port = htons(25343);    // set the port
-
-	//connect to server
-	if (connect(Socket, (sockaddr*)&Addr, sizeof(Addr)) < 0)
-	{
-		cout << "Connection failed !" << endl;
-		system("pause");
-		return 0;
-	}
-
-	cout << "Connection successful !\n" << endl;
+	open_socket("127.0.0.1", 25000, Socket);
 
 	string input, parameters;
 	//get user input
