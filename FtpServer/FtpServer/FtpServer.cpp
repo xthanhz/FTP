@@ -2,7 +2,7 @@
 #include <iostream>
 #include <WinSock2.h>
 #include <fstream>
-
+#include <cstdio>
 #pragma comment(lib, "Ws2_32.lib")
 
 using namespace std;
@@ -17,6 +17,10 @@ sockaddr_in IncomingAddress;
 int AddressLen = sizeof(IncomingAddress);
 int SendResult;
 int RecieveResult;
+bool PASSWORD = false;
+char* password = "password";
+string oldName;
+string newName;
 
 SOCKET OpenAndList(int port)
 {
@@ -70,7 +74,7 @@ void recieve(){
 	SOCKET FileSocket = accept(FileSocketListen, NULL, NULL);
 
 	//file size of file being receieved
-	int fileSize; 
+	int fileSize;
 	const char* filename;
 	char* msg = "File Recieved";	//string to echo
 
@@ -83,8 +87,8 @@ void recieve(){
 	}
 
 	//buffer for file
-	char* RecieveBuffer = new char[fileSize]; 
-		
+	char* RecieveBuffer = new char[fileSize];
+
 	//clear the buffer 
 	memset(Buffer, '\0', 1024);
 	if (recv(FileSocket, Buffer, 1024, 0)) //receive file name
@@ -134,6 +138,81 @@ void recieve(){
 }
 
 void send(string filename){
+	//opens new socket for file transfer
+	FileSocketListen = OpenFileTransferListener(25001);
+	SOCKET FileSocket = accept(FileSocketListen, NULL, NULL);
+
+	char *newfilename;
+	unsigned long iFileSize = 0;
+	long size;     //file size
+
+	ifstream infile(filename, ios::in | ios::binary | ios::ate);
+
+	//convert string to char
+	if (infile.is_open()){
+		size = infile.tellg();     //retrieve get pointer position
+		infile.seekg(0, ios::beg);     //position get pointer at the begining of the file
+		newfilename = new char[size];     //initialize the buffer
+		infile.read(newfilename, size);     //read file to buffer
+		infile.close();     //close file
+
+		string s = to_string(size);
+		const char* mysize = s.c_str();
+		//send file size
+		send(FileSocket, mysize, size, 0);
+
+		//clear the buffer 
+		memset(Buffer, '\0', 1024);
+		RecieveResult = recv(FileSocket, Buffer, 1024, 0);
+		string returnmsg = Buffer;
+		if (returnmsg != "OK")
+			return;
+
+		//send file
+		SendResult = send(FileSocket, newfilename, size, 0);
+
+		//check if sent correctly
+		if (SendResult == SOCKET_ERROR) {
+			cout << "Sending Fail" << endl;;
+			closesocket(FileSocket);
+			WSACleanup();
+			exit(0);
+		}
+
+		//print byte being sent
+		printf("Bytes Sent: %ld\n", SendResult);
+
+		//clear the buffer 
+		memset(Buffer, '\0', 1024);
+		RecieveResult = recv(FileSocket, Buffer, 1024, 0);
+		printf("Message Recieve: ");
+		cout << Buffer << endl;
+		printf("Connection closed\n\n");
+
+		//Close sending
+		SendResult = shutdown(FileSocket, SD_SEND);
+		if (SendResult == SOCKET_ERROR) {
+			printf("send failed with error: %d\n", WSAGetLastError());
+			closesocket(FileSocket);
+			WSACleanup();
+			exit(0);
+		}
+	}
+	else{
+		cout << "Invalid file" << endl;
+	}
+}
+
+bool file_exists(const string& name) {
+	ifstream f(name.c_str());
+	if (f.good()) {
+		f.close();
+		return true;
+	}
+	else {
+		f.close();
+		return false;
+	}
 }
 
 void acceptClients(){
@@ -148,10 +227,14 @@ void acceptClients(){
 		WSACleanup();
 		exit(0);
 	}
-
-	cout << "Client Accepted" << endl;
+	char* s = "Server Requires Password. Please use PASS password to login.";
+	SendResult = send(ClientSocket, s, (int)strlen(s), 0);
+	cout << "Waiting on Password";
 	
-	string command = " "; 
+	cout << "Client Accepted" << endl;
+
+	string command = " ";
+	string filename = " ";
 	while (command != "Close"){
 		//----------------------Get user command----------------------
 
@@ -172,12 +255,79 @@ void acceptClients(){
 
 		//TODO implement other commands
 		//list of commands
-		if (command == "STOR"){
+		if (command == "PASS"){
+			recv(ClientSocket, Buffer, 1024, 0);
+			if (strcmp(Buffer, password) == 0)
+			{
+				cout << "login successful!" << endl;
+				char* msg = "Login Successful";
+				send(ClientSocket, msg, (int)strlen(msg), 0);
+				PASSWORD = true;
+			}
+			else
+			{
+				char* msg = "Incorrect password. You are being disconnected.";
+				send(ClientSocket, msg, (int)strlen(msg), 0);
+				closesocket(ClientSocket);
+			}
+		}
+		else if (command == "STOR" && PASSWORD == true){
 			// Receive until the peer shuts down the connection
 			recieve();
 		}
-		if (command == "RETR"){
-			cout << "user wants to retrieve, test" << endl;
+		else if (command == "RETR" && PASSWORD == true){
+			//clear the buffer 
+			memset(Buffer, '\0', 1024);
+			recv(ClientSocket, Buffer, 1024, 0);//retrieve filename
+
+			string s = Buffer;
+			//check if file exists
+			if (file_exists(s)){
+				char* msg = "OK";
+				//give ok msg
+				send(ClientSocket, msg, (int)strlen(msg), 0);
+
+				//send file
+				send(s);
+			}
+			else{
+				char* msg = "File does not exists";
+				//give error msg
+				send(ClientSocket, msg, (int)strlen(msg), 0);
+			}
+		}
+		else if (command == "DELE" && PASSWORD == true){
+			recv(ClientSocket, Buffer, 1024, 0);
+
+			if (remove(Buffer) == 0)
+			{
+				printf("File %s has been deleted.\n", Buffer);
+				char* msg = "File has been deleted.";
+				send(ClientSocket, msg, (int)strlen(msg), 0);
+			}
+			else
+				fprintf(stderr, "Error deleting file %s.\n", Buffer);
+				char* msg = "Error deleting file.";
+				send(ClientSocket, msg, (int)strlen(msg), 0);
+		}
+		else if (command == "RNFR" && PASSWORD == true)
+		{
+			recv(ClientSocket, Buffer, 1024, 0);
+			oldName = Buffer;
+			cout << oldName << endl;
+		}
+		else if (command == "RNTO" && PASSWORD == true)
+		{
+			recv(ClientSocket, Buffer, 1024, 0);
+			newName = Buffer;
+			cout << newName << endl;
+			const char* oldName1 = oldName.c_str();
+			const char* newName1 = newName.c_str();
+			int result = rename(oldName1,newName1);
+			if (result == 0)
+				puts("File successfully renamed");
+			else
+				perror("Error renaming file");
 		}
 		else{
 			char* msg = "Invalid Command";
@@ -185,7 +335,7 @@ void acceptClients(){
 		}
 	}
 
-	cout << "Client Disconnected " << endl << endl; 
+	cout << "Client Disconnected " << endl << endl;
 	//accept a new client
 	acceptClients();
 }
