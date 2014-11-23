@@ -8,111 +8,20 @@
 using namespace std;
 
 //main variables
-SOCKET Socket;
+SOCKET MainSocket, FileSocket;
 WSADATA Winsock;
 sockaddr_in Addr;	//address
-char Buffer[1056];	//data buffer
+char Buffer[1024];	//data buffer
 char *prt = Buffer;		//pointer to buffer
 int Addrlen = sizeof(Addr);
 int SendResult;
 int RecieveResult;
 
-void recieve(){
-	char* msg = "File Recieved";	//string to echo
-	do {
-		RecieveResult = recv(Socket, Buffer, 256, 0);
-		if (RecieveResult > 0) {
-			printf("Bytes received: %d\n", RecieveResult);
+SOCKET ConnectSocket(char* address, int port)
+{
+	WSAStartup(MAKEWORD(2, 2), &Winsock);    // Start Winsock
 
-			// Echo the buffer back to the sender
-			SendResult = send(Socket, msg, (int)strlen(msg), 0);
-
-			//send error check
-			if (SendResult == SOCKET_ERROR) {
-				cout << "Sending Error" << endl;
-				closesocket(Socket);
-				WSACleanup();
-				system("exit");
-			}
-			printf("Bytes sent: %d\n", SendResult);
-
-		}
-		else if (RecieveResult == 0){
-			printf("Message Recieve: ");
-			for (int i = 0; i < sizeof(Buffer); i++)
-				cout << Buffer[i];
-
-			printf("\nConnection closing...\n");
-			printf("\nListening to new clients...\n");
-			closesocket(Socket);
-		}
-		else  {
-			printf("recv failed with error: %d\n", WSAGetLastError());
-			closesocket(Socket);
-			WSACleanup();
-			system("exit");
-		}
-
-	} while (RecieveResult > 0);
-}
-
-void send(string filename){
-	char *newfilename;
-	unsigned long iFileSize = 0;
-	long size;     //file size
-
-	ifstream infile(filename, ios::in | ios::binary | ios::ate);
-
-	//convert string to char
-	size = infile.tellg();     //retrieve get pointer position
-	infile.seekg(0, ios::beg);     //position get pointer at the begining of the file
-	newfilename = new char[size];     //initialize the buffer
-	infile.read(newfilename, size);     //read file to buffer
-	infile.close();     //close file
-
-	SendResult = send(Socket, newfilename, (int)strlen(newfilename), 0);
-
-	//check if sent correctly
-	if (SendResult == SOCKET_ERROR) {
-		cout << "Sending Fail" << endl;;
-		closesocket(Socket);
-		WSACleanup();
-		system("exit");
-	}
-
-	//print byte being sent
-	printf("Bytes Sent: %ld\n", SendResult);
-
-	//Close sending
-	SendResult = shutdown(Socket, SD_SEND);
-	if (SendResult == SOCKET_ERROR) {
-		printf("send failed with error: %d\n", WSAGetLastError());
-		closesocket(Socket);
-		WSACleanup();
-		system("exit");
-	}
-
-	do {
-
-		RecieveResult = recv(Socket, Buffer, 256, 0);
-
-		if (RecieveResult > 0){
-			printf("Bytes received: %d\n", RecieveResult);
-		}
-		else if (RecieveResult == 0){
-			printf("Message Recieve: ");
-			for (int i = 0; i < sizeof(Buffer); i++)
-				cout << Buffer[i];
-			printf("\nConnection closed\n");
-		}
-		else
-			printf("recv failed with error: %d\n", WSAGetLastError());
-
-	} while (RecieveResult > 0);
-}
-
-void open_socket(const char* address, int port, SOCKET soc){
-	soc = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);		// initalize socket 
+	SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);		// initalize socket 
 
 	ZeroMemory(&Addr, sizeof(Addr));    // c lear the struct
 	Addr.sin_family = AF_INET;    // set the address family
@@ -121,7 +30,7 @@ void open_socket(const char* address, int port, SOCKET soc){
 	Addr.sin_port = htons(port);    // set the port
 
 	//connect to server
-	if (connect(soc, (sockaddr*)&Addr, sizeof(Addr)) < 0)
+	if (connect(s, (sockaddr*)&Addr, sizeof(Addr)) < 0)
 	{
 		cout << "Connection failed !" << endl;
 		system("pause");
@@ -129,27 +38,110 @@ void open_socket(const char* address, int port, SOCKET soc){
 	}
 
 	cout << "Connection successful !\n" << endl;
+
+	return s;
 }
 
+void recieve(){
+}
+
+void send(string filename){
+	//open up new socket for file transfer
+	FileSocket = ConnectSocket("127.0.0.1", 25001);
+
+	char *newfilename;
+	unsigned long iFileSize = 0;
+	long size;     //file size
+
+	ifstream infile(filename, ios::in | ios::binary | ios::ate);
+
+	//convert string to char
+	if (infile.is_open()){
+		size = infile.tellg();     //retrieve get pointer position
+		infile.seekg(0, ios::beg);     //position get pointer at the begining of the file
+		newfilename = new char[size];     //initialize the buffer
+		infile.read(newfilename, size);     //read file to buffer
+		infile.close();     //close file
+
+		string s = to_string(size);
+		const char* mysize = s.c_str();
+		//send file size
+		send(FileSocket, mysize, size, 0);
+		
+		//send file name
+		const char* myfilename = filename.c_str();
+		send(FileSocket, myfilename, strlen(myfilename), 0);
+
+		//send file
+		SendResult = send(FileSocket, newfilename, size, 0);
+
+		//check if sent correctly
+		if (SendResult == SOCKET_ERROR) {
+			cout << "Sending Fail" << endl;;
+			closesocket(FileSocket);
+			WSACleanup();
+			exit(0);
+		}
+
+		//print byte being sent
+		printf("Bytes Sent: %ld\n", SendResult);
+
+		//Close sending
+		SendResult = shutdown(FileSocket, SD_SEND);
+		if (SendResult == SOCKET_ERROR) {
+			printf("send failed with error: %d\n", WSAGetLastError());
+			closesocket(FileSocket);
+			WSACleanup();
+			exit(0);
+		}
+		//clear the buffer 
+		memset(Buffer, '\0', 1024);
+		do {
+			RecieveResult = recv(FileSocket, Buffer, 1024, 0);
+
+			if (RecieveResult > 0){
+				printf("Bytes received: %d\n", RecieveResult);
+			}
+			else if (RecieveResult == 0){
+
+				printf("Message Recieve: ");
+				cout << Buffer << endl;
+				printf("Connection closed\n\n");
+			}
+			else
+				printf("recv failed with error: %d\n", WSAGetLastError());
+
+		} while (RecieveResult > 0);
+	}
+	else{
+		cout << "Invalid file" << endl;
+	}
+}
+
+
 int main(){
-
-	WSAStartup(MAKEWORD(2, 2), &Winsock);    // Start Winsock
-
-	open_socket("127.0.0.1", 25000, Socket);
+	MainSocket = ConnectSocket("127.0.0.1", 25000);
 
 	string input, parameters;
 	//get user input
 	cout << "Please enter a message or command to send " << endl;
 	cin >> input >> parameters;
-	
+
 	while (input != "exit"){
 		if (input == "HELP"){
 			cout << "Avaliable commands:" << endl;
 			cout << "1. STOR filename" << endl;
 			cout << "2. RETR filename" << endl;
 		}
+
+		// send command
+		const char* msg = input.c_str();
+
+		//send server request and let server know we want to store
+		send(MainSocket, msg, (int)strlen(msg), 0);
+
 		if (input == "STOR"){
-			//send request
+			// send a file to server
 			send(parameters);
 		}
 		else if (input == "RETR"){
@@ -162,7 +154,7 @@ int main(){
 	system("pause");
 
 	//close socket and cleanup
-	closesocket(Socket);
+	closesocket(MainSocket);
 	WSACleanup();
 	return 0;
 }

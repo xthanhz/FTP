@@ -7,120 +7,29 @@
 
 using namespace std;
 
-SOCKET Socket, ClientSocket;
+SOCKET MainSocket, ClientSocket, FileSocketListen, FileSocket;
 WSADATA Winsock;
 sockaddr_in Addr;
 int Addrlen = sizeof(sockaddr_in);
-char Buffer[256];	//data buffer
+char Buffer[1024];	//data buffer
 char *prt = Buffer;		//pointer to buffer
 sockaddr_in IncomingAddress;
 int AddressLen = sizeof(IncomingAddress);
 int SendResult;
 int RecieveResult;
 
-void recieve(){
-	char* msg = "File Recieved";	//string to echo
-	do {
-		RecieveResult = recv(ClientSocket, Buffer, 256, 0);
-		if (RecieveResult > 0) {
-			printf("Bytes received: %d\n", RecieveResult);
+SOCKET OpenAndList(int port)
+{
+	WSAStartup(MAKEWORD(2, 2), &Winsock);    // Start Winsock
 
-			// Echo the buffer back to the sender
-			SendResult = send(ClientSocket, msg, (int)strlen(msg), 0);
-
-			//send error check
-			if (SendResult == SOCKET_ERROR) {
-				cout << "Sending Error" << endl;
-				closesocket(ClientSocket);
-				WSACleanup();
-				return;
-			}
-			printf("Bytes sent: %d\n", SendResult);
-
-		}
-		else if (RecieveResult == 0){
-			printf("Message Recieve: ");
-			for (int i = 0; i < sizeof(Buffer); i++)
-				cout << Buffer[i];
-
-			printf("\nConnection closing...\n");
-			printf("\nListening to new clients...\n");
-			closesocket(ClientSocket);
-		}
-		else  {
-			printf("recv failed with error: %d\n", WSAGetLastError());
-			closesocket(ClientSocket);
-			WSACleanup();
-			return;
-		}
-
-	} while (RecieveResult > 0);
-}
-
-void send(string filename){
-	char *newfilename;
-	unsigned long iFileSize = 0;
-	long size;     //file size
-
-	ifstream infile(filename, ios::in | ios::binary | ios::ate);
-
-	//convert string to char
-	size = infile.tellg();     //retrieve get pointer position
-	infile.seekg(0, ios::beg);     //position get pointer at the begining of the file
-	newfilename = new char[size];     //initialize the buffer
-	infile.read(newfilename, size);     //read file to buffer
-	infile.close();     //close file
-
-	SendResult = send(ClientSocket, newfilename, (int)strlen(newfilename), 0);
-
-	//check if sent correctly
-	if (SendResult == SOCKET_ERROR) {
-		cout << "Sending Fail" << endl;;
-		closesocket(ClientSocket);
-		WSACleanup();
-		system("exit");
-	}
-
-	//print byte being sent
-	printf("Bytes Sent: %ld\n", SendResult);
-
-	//Close sending
-	SendResult = shutdown(ClientSocket, SD_SEND);
-	if (SendResult == SOCKET_ERROR) {
-		printf("send failed with error: %d\n", WSAGetLastError());
-		closesocket(ClientSocket);
-		WSACleanup();
-		system("exit");
-	}
-
-	do {
-
-		RecieveResult = recv(ClientSocket, Buffer, 256, 0);
-
-		if (RecieveResult > 0){
-			printf("Bytes received: %d\n", RecieveResult);
-		}
-		else if (RecieveResult == 0){
-			printf("Message Recieve: ");
-			for (int i = 0; i < sizeof(Buffer); i++)
-				cout << Buffer[i];
-			printf("\nConnection closed\n");
-		}
-		else
-			printf("recv failed with error: %d\n", WSAGetLastError());
-
-	} while (RecieveResult > 0);
-}
-
-void open_socket(int port, SOCKET soc){
-	soc= socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
 	ZeroMemory(&Addr, sizeof(Addr));
 	Addr.sin_family = AF_INET;
 	Addr.sin_port = htons(port);
-	bind(soc, (sockaddr*)&Addr, sizeof(Addr));
+	bind(s, (sockaddr*)&Addr, sizeof(Addr));
 
-	if (listen(soc, 1) == SOCKET_ERROR)
+	if (listen(s, 1) == SOCKET_ERROR)
 	{
 		cout << "Listening error" << endl;
 	}
@@ -128,34 +37,171 @@ void open_socket(int port, SOCKET soc){
 	{
 		cout << "Listening!" << endl;
 	}
+
+	return s;
+}
+
+SOCKET OpenFileTransferListener(int port)
+{
+	WSAStartup(MAKEWORD(2, 2), &Winsock);    // Start Winsock
+
+	SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+	ZeroMemory(&Addr, sizeof(Addr));
+	Addr.sin_family = AF_INET;
+	Addr.sin_port = htons(port);
+	bind(s, (sockaddr*)&Addr, sizeof(Addr));
+
+	if (listen(s, 1) == SOCKET_ERROR)
+	{
+		cout << "Listening error" << endl;
+	}
+	else
+	{
+		cout << "File transfer port opened!" << endl;
+	}
+
+	return s;
+}
+
+void recieve(){
+	//opens new socket for file transfer
+	FileSocketListen = OpenFileTransferListener(25001);
+	SOCKET FileSocket = accept(FileSocketListen, NULL, NULL);
+
+	//file size of file being receieved
+	int fileSize; 
+	const char* filename;
+	char* msg = "File Recieved";	//string to echo
+
+	//clear the buffer 
+	memset(Buffer, '\0', 1024);
+	if (recv(FileSocket, Buffer, 1024, 0)) //receive file size
+	{
+		fileSize = atoi(Buffer);
+		//printf("File Size: %i\r\n", fileSize);
+	}
+
+	//buffer for file
+	char* RecieveBuffer = new char[fileSize]; 
+		
+	//clear the buffer 
+	memset(Buffer, '\0', 1024);
+	if (recv(FileSocket, Buffer, 1024, 0)) //receive file name
+	{
+		filename = Buffer;
+	}
+
+	do {
+		RecieveResult = recv(FileSocket, RecieveBuffer, fileSize, 0);
+		if (RecieveResult > 0) {
+			printf("Bytes received: %d\n", RecieveResult);
+
+			// Echo the buffer back to the sender
+			SendResult = send(FileSocket, msg, (int)strlen(msg), 0);
+
+			//send error check
+			if (SendResult == SOCKET_ERROR) {
+				cout << "Sending Error" << endl;
+				closesocket(FileSocket);
+				WSACleanup();
+				return;
+			}
+			printf("Bytes sent: %d\n", SendResult);
+
+		}
+		else if (RecieveResult == 0){
+			//store the file
+			FILE* outfile;
+			outfile = fopen(filename, "wb"); //todo: change this to the file being stored
+			fwrite(RecieveBuffer, 1, fileSize, outfile);
+			fclose(outfile);
+
+			printf("File Recieved, Connection closing...\n\n");
+			closesocket(FileSocket);
+		}
+		else  {
+			printf("recv failed with error: %d\n", WSAGetLastError());
+			closesocket(FileSocket);
+			WSACleanup();
+			return;
+		}
+
+	} while (RecieveResult > 0);
+
+	closesocket(FileSocketListen);
+	WSACleanup();
+}
+
+void send(string filename){
+}
+
+void acceptClients(){
+	//Accepts client
+	cout << "Accepting Clients" << endl;
+
+	ClientSocket = accept(MainSocket, NULL, NULL);
+
+	if (ClientSocket == INVALID_SOCKET) {
+		cout << "Client Accepting Error" << endl;
+		closesocket(MainSocket);
+		WSACleanup();
+		exit(0);
+	}
+
+	cout << "Client Accepted" << endl;
+	
+	string command = " "; 
+	while (command != "Close"){
+		//----------------------Get user command----------------------
+
+		cout << "Waiting for client command " << endl;
+
+		//clear the buffer 
+		memset(Buffer, '\0', 1024);
+		RecieveResult = recv(ClientSocket, Buffer, 1024, 0);
+		if (RecieveResult != SOCKET_ERROR) //receive file name
+		{
+			command = Buffer;
+			//cout << command << endl;
+		}
+		else{ // checks to see if client d/c on us
+			command = "Close";
+		}
+		//----------------------Get user command-----------------------
+
+		//TODO implement other commands
+		//list of commands
+		if (command == "STOR"){
+			// Receive until the peer shuts down the connection
+			recieve();
+		}
+		if (command == "RETR"){
+			cout << "user wants to retrieve, test" << endl;
+		}
+		else{
+			char* msg = "Invalid Command";
+			SendResult = send(ClientSocket, msg, (int)strlen(msg), 0);
+		}
+	}
+
+	cout << "Client Disconnected " << endl << endl; 
+	//accept a new client
+	acceptClients();
 }
 
 int main()
 {
-	WSAStartup(MAKEWORD(2, 2), &Winsock);    // Start Winsock
+	//open the socket
+	MainSocket = OpenAndList(25000);
 
-	open_socket(25000, Socket);
+	//accept the client and listen for action
+	acceptClients();
 
-	while (true){
-		//Accepts client
-		ClientSocket = accept(Socket, NULL, NULL);
-
-		if (ClientSocket == INVALID_SOCKET) {
-			cout << "Client Accepting Error" << endl;
-			closesocket(Socket);
-			WSACleanup();
-			return 1;
-		}
-
-		cout << "Client Accepted" << endl;
-
-		// Receive until the peer shuts down the connection
-		recieve();
-	}
 	system("pause");
 
 	//close socket
-	closesocket(Socket);
+	closesocket(MainSocket);
 	closesocket(ClientSocket);
 	WSACleanup();
 	return 0;
