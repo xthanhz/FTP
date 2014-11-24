@@ -39,7 +39,7 @@ SOCKET ConnectSocket(char* address, int port)
 	}
 
 	cout << "Connection successful !\n" << endl;
-	
+
 	return s;
 }
 
@@ -50,7 +50,7 @@ void deleteFile(string filename)
 	send(MainSocket, myfilename, strlen(myfilename), 0);
 	recv(MainSocket, Buffer, 1024, 0);
 	cout << Buffer << endl;
-	
+
 }
 
 bool file_exists(const string& name) {
@@ -161,7 +161,7 @@ void send(string filename){
 			cout << "Sending Fail" << endl;;
 			closesocket(FileSocket);
 			WSACleanup();
-			exit(0); 
+			exit(0);
 		}
 
 		//print byte being sent
@@ -232,7 +232,7 @@ int main(){
 			memset(Buffer, '\0', 1024);
 			recv(MainSocket, Buffer, 1024, 0);
 			string response = Buffer;
-			
+
 			//login is successful
 			if (response == "Login Successful")
 				logined = true;
@@ -243,7 +243,8 @@ int main(){
 			cout << "Please use PASS passowrd command to login!" << endl << endl;
 		}
 	}
-
+	
+	cout << "Type HELP 1 for a list of commands!" << endl;
 	cout << "Please enter a message or command to send " << endl;
 	cin >> input >> parameters;
 
@@ -253,7 +254,9 @@ int main(){
 			cout << "1. STOR filename" << endl;
 			cout << "2. RETR filename" << endl;
 			cout << "3. DELE filename" << endl;
-			cout << "4. QUIT 1" << endl;
+			cout << "4. RNFR oldFilename" << endl;
+			cout << "5. RNTO newFilename" << endl;
+			cout << "6. QUIT 1" << endl;
 		}
 
 		// send command
@@ -302,8 +305,19 @@ int main(){
 		}
 		else if (input == "RNTO")
 		{
-			const char*	new1= parameters.c_str();
-			send(MainSocket,new1, strlen(new1),0);
+			const char*	new1 = parameters.c_str();
+			send(MainSocket, new1, strlen(new1), 0);
+		}
+		else if (input == "LIST")
+		{
+			const char*	ack = parameters.c_str();
+			send(MainSocket, ack, strlen(ack), 0);
+
+			//recieve list
+			memset(Buffer, '\0', 1024);
+			recv(MainSocket, Buffer, 1024, 0);
+
+			cout << Buffer << endl;
 		}
 		else if (input == "QUIT"){
 			cout << "Closing Connection with server" << endl;

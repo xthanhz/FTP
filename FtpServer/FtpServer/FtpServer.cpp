@@ -3,6 +3,9 @@
 #include <WinSock2.h>
 #include <fstream>
 #include <cstdio>
+#include "dirent.h"
+#include <direct.h>
+#include <vector>
 #pragma comment(lib, "Ws2_32.lib")
 
 using namespace std;
@@ -215,6 +218,36 @@ bool file_exists(const string& name) {
 	}
 }
 
+const char* GetCurrentDirectory()
+{
+	char *path = NULL;
+	path = getcwd(NULL, 0); 
+	if (path != NULL)
+		return path;
+}
+
+string listFilesInDirectory()
+{
+	DIR *dir;
+	string output;
+	struct dirent *ent;
+	if ((dir = opendir(GetCurrentDirectory())) != NULL) {
+		/* print all the files and directories within directory */
+		while ((ent = readdir(dir)) != NULL) {
+			output += ent->d_name;
+			output += "\n";
+		}
+		closedir(dir);
+		return output;
+	}
+	else {
+		/* could not open directory */
+		cout << "Could not access current directory" << endl;
+		return "Could not access current directory";
+	}
+}
+
+
 void acceptClients(){
 	//Accepts client
 	cout << "Accepting Clients" << endl;
@@ -309,6 +342,7 @@ void acceptClients(){
 				}
 			}
 			else if (command == "DELE"){
+				memset(Buffer, '\0', 1024);
 				recv(ClientSocket, Buffer, 1024, 0);
 
 				if (remove(Buffer) == 0)
@@ -324,12 +358,14 @@ void acceptClients(){
 			}
 			else if (command == "RNFR")
 			{
+				memset(Buffer, '\0', 1024);
 				recv(ClientSocket, Buffer, 1024, 0);
 				oldName = Buffer;
 				cout << oldName << endl;
 			}
 			else if (command == "RNTO")
 			{
+				memset(Buffer, '\0', 1024);
 				recv(ClientSocket, Buffer, 1024, 0);
 				newName = Buffer;
 				cout << newName << endl;
@@ -340,6 +376,15 @@ void acceptClients(){
 					puts("File successfully renamed");
 				else
 					perror("Error renaming file");
+			}
+			else if (command == "LIST"){
+				memset(Buffer, '\0', 1024);
+				recv(MainSocket, Buffer, 1024, 0);
+
+				string list = listFilesInDirectory();
+				const char* msg = list.c_str();
+
+				send(ClientSocket, msg, strlen(msg), 0);
 			}
 			else if (command == "QUIT"){
 				cout << "Client requested to Quit" << endl;
