@@ -16,6 +16,7 @@ char *prt = Buffer;		//pointer to buffer
 int Addrlen = sizeof(Addr);
 int SendResult;
 int RecieveResult;
+bool logined = false;
 
 SOCKET ConnectSocket(char* address, int port)
 {
@@ -34,7 +35,7 @@ SOCKET ConnectSocket(char* address, int port)
 	{
 		cout << "Connection failed !" << endl;
 		system("pause");
-		system("exit");
+		exit(0);
 	}
 
 	cout << "Connection successful !\n" << endl;
@@ -201,37 +202,67 @@ void send(string filename){
 
 int main(){
 	MainSocket = ConnectSocket("127.0.0.1", 25000);
-	
-	recv(MainSocket, Buffer, 1024, 0);
-	cout << Buffer << endl;
 
 	string input, parameters;
 	//get user input
+
+	recv(MainSocket, Buffer, 1024, 0);
+	cout << Buffer << endl;
+
+	//make sure user is login
+	while (!logined){
+
+		cout << "Please enter password to login to server" << endl;
+		cin >> input >> parameters;
+
+		if (input == "PASS")
+		{
+			// send command
+			const char* msg = input.c_str();
+
+			//send server command
+			send(MainSocket, msg, (int)strlen(msg), 0);
+
+			const char* pass = parameters.c_str();
+
+			//send server password
+			send(MainSocket, pass, (int)strlen(pass), 0);
+
+			//get server response
+			memset(Buffer, '\0', 1024);
+			recv(MainSocket, Buffer, 1024, 0);
+			string response = Buffer;
+			
+			//login is successful
+			if (response == "Login Successful")
+				logined = true;
+			else// print error message from server
+				cout << Buffer << endl;
+		}
+		else{
+			cout << "Please use PASS passowrd command to login!" << endl << endl;
+		}
+	}
+
 	cout << "Please enter a message or command to send " << endl;
 	cin >> input >> parameters;
 
-	while (input != "exit"){
+	while (true){
 		if (input == "HELP"){
 			cout << "Avaliable commands:" << endl;
 			cout << "1. STOR filename" << endl;
 			cout << "2. RETR filename" << endl;
+			cout << "3. DELE filename" << endl;
+			cout << "4. QUIT 1" << endl;
 		}
 
 		// send command
 		const char* msg = input.c_str();
 
-		//send server request and let server know we want to store
+		//send server command
 		send(MainSocket, msg, (int)strlen(msg), 0);
-		if (input == "PASS")
-		{
-			const char* myfilename = parameters.c_str();
-			send(MainSocket, myfilename, strlen(myfilename), 0);
-			memset(Buffer, '\0', 1024);
-			recv(MainSocket, Buffer, 1024, 0);
-			cout << Buffer << endl;
-			
-		}
-		else if (input == "STOR"){
+
+		if (input == "STOR"){
 			if (file_exists(parameters)){
 				// send a file to server
 				send(parameters);
@@ -273,6 +304,10 @@ int main(){
 		{
 			const char*	new1= parameters.c_str();
 			send(MainSocket,new1, strlen(new1),0);
+		}
+		else if (input == "QUIT"){
+			cout << "Closing Connection with server" << endl;
+			break;
 		}
 		cout << "Please enter a message or command to send " << endl;
 		cin >> input >> parameters;

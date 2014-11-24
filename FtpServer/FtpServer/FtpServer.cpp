@@ -227,19 +227,20 @@ void acceptClients(){
 		WSACleanup();
 		exit(0);
 	}
+	cout << "Client Accepted" << endl;
+
 	char* s = "Server Requires Password. Please use PASS password to login.";
 	SendResult = send(ClientSocket, s, (int)strlen(s), 0);
-	cout << "Waiting on Password";
 	
-	cout << "Client Accepted" << endl;
+	cout << "Waiting on Password" << endl;
 
 	string command = " ";
 	string filename = " ";
-	while (command != "Close"){
+	while (command != "QUIT"){
+
+		if (PASSWORD)
+			cout << "Waiting for client command " << endl;
 		//----------------------Get user command----------------------
-
-		cout << "Waiting for client command " << endl;
-
 		//clear the buffer 
 		memset(Buffer, '\0', 1024);
 		RecieveResult = recv(ClientSocket, Buffer, 1024, 0);
@@ -249,91 +250,109 @@ void acceptClients(){
 			//cout << command << endl;
 		}
 		else{ // checks to see if client d/c on us
-			command = "Close";
+			command = "QUIT";
 		}
 		//----------------------Get user command-----------------------
 
-		//TODO implement other commands
-		//list of commands
-		if (command == "PASS"){
-			recv(ClientSocket, Buffer, 1024, 0);
-			if (strcmp(Buffer, password) == 0)
-			{
-				cout << "login successful!" << endl;
-				char* msg = "Login Successful";
-				send(ClientSocket, msg, (int)strlen(msg), 0);
-				PASSWORD = true;
+		//make sure user is login
+		if (!PASSWORD){
+			if (command == "PASS"){
+				memset(Buffer, '\0', 1024);
+				RecieveResult = recv(ClientSocket, Buffer, 1024, 0);
+				if (RecieveResult != SOCKET_ERROR) //receive file name
+				{
+					if (strcmp(Buffer, password) == 0)
+					{
+						cout << "login successful!" << endl;
+						char* msg = "Login Successful";
+						send(ClientSocket, msg, (int)strlen(msg), 0);
+						PASSWORD = true;
+						continue;
+					}
+					else
+					{
+						char* msg = "Incorrect password. Please Try again!";
+						send(ClientSocket, msg, (int)strlen(msg), 0);
+					}
+				}
+				else{
+					// checks to see if client d/c on us
+					command = "QUIT";
+				}
 			}
-			else
-			{
-				char* msg = "Incorrect password. You are being disconnected.";
-				send(ClientSocket, msg, (int)strlen(msg), 0);
-				closesocket(ClientSocket);
-			}
-		}
-		else if (command == "STOR" && PASSWORD == true){
-			// Receive until the peer shuts down the connection
-			recieve();
-		}
-		else if (command == "RETR" && PASSWORD == true){
-			//clear the buffer 
-			memset(Buffer, '\0', 1024);
-			recv(ClientSocket, Buffer, 1024, 0);//retrieve filename
-
-			string s = Buffer;
-			//check if file exists
-			if (file_exists(s)){
-				char* msg = "OK";
-				//give ok msg
-				send(ClientSocket, msg, (int)strlen(msg), 0);
-
-				//send file
-				send(s);
-			}
-			else{
-				char* msg = "File does not exists";
-				//give error msg
-				send(ClientSocket, msg, (int)strlen(msg), 0);
-			}
-		}
-		else if (command == "DELE" && PASSWORD == true){
-			recv(ClientSocket, Buffer, 1024, 0);
-
-			if (remove(Buffer) == 0)
-			{
-				printf("File %s has been deleted.\n", Buffer);
-				char* msg = "File has been deleted.";
-				send(ClientSocket, msg, (int)strlen(msg), 0);
-			}
-			else
-				fprintf(stderr, "Error deleting file %s.\n", Buffer);
-				char* msg = "Error deleting file.";
-				send(ClientSocket, msg, (int)strlen(msg), 0);
-		}
-		else if (command == "RNFR" && PASSWORD == true)
-		{
-			recv(ClientSocket, Buffer, 1024, 0);
-			oldName = Buffer;
-			cout << oldName << endl;
-		}
-		else if (command == "RNTO" && PASSWORD == true)
-		{
-			recv(ClientSocket, Buffer, 1024, 0);
-			newName = Buffer;
-			cout << newName << endl;
-			const char* oldName1 = oldName.c_str();
-			const char* newName1 = newName.c_str();
-			int result = rename(oldName1,newName1);
-			if (result == 0)
-				puts("File successfully renamed");
-			else
-				perror("Error renaming file");
 		}
 		else{
-			char* msg = "Invalid Command";
-			SendResult = send(ClientSocket, msg, (int)strlen(msg), 0);
+			//list of commands
+			if (command == "STOR"){
+				// Receive until the peer shuts down the connection
+				recieve();
+			}
+			else if (command == "RETR"){
+				//clear the buffer 
+				memset(Buffer, '\0', 1024);
+				recv(ClientSocket, Buffer, 1024, 0);//retrieve filename
+
+				string s = Buffer;
+				//check if file exists
+				if (file_exists(s)){
+					char* msg = "OK";
+					//give ok msg
+					send(ClientSocket, msg, (int)strlen(msg), 0);
+
+					//send file
+					send(s);
+				}
+				else{
+					char* msg = "File does not exists";
+					//give error msg
+					send(ClientSocket, msg, (int)strlen(msg), 0);
+				}
+			}
+			else if (command == "DELE"){
+				recv(ClientSocket, Buffer, 1024, 0);
+
+				if (remove(Buffer) == 0)
+				{
+					printf("File %s has been deleted.\n", Buffer);
+					char* msg = "File has been deleted.";
+					send(ClientSocket, msg, (int)strlen(msg), 0);
+				}
+				else
+					fprintf(stderr, "Error deleting file %s.\n", Buffer);
+				char* msg = "Error deleting file.";
+				send(ClientSocket, msg, (int)strlen(msg), 0);
+			}
+			else if (command == "RNFR")
+			{
+				recv(ClientSocket, Buffer, 1024, 0);
+				oldName = Buffer;
+				cout << oldName << endl;
+			}
+			else if (command == "RNTO")
+			{
+				recv(ClientSocket, Buffer, 1024, 0);
+				newName = Buffer;
+				cout << newName << endl;
+				const char* oldName1 = oldName.c_str();
+				const char* newName1 = newName.c_str();
+				int result = rename(oldName1, newName1);
+				if (result == 0)
+					puts("File successfully renamed");
+				else
+					perror("Error renaming file");
+			}
+			else if (command == "QUIT"){
+				cout << "Client requested to Quit" << endl;
+			}
+			else{
+				char* msg = "Invalid Command";
+				SendResult = send(ClientSocket, msg, (int)strlen(msg), 0);
+			}
 		}
 	}
+
+	//reset password
+	PASSWORD = false;
 
 	cout << "Client Disconnected " << endl << endl;
 	//accept a new client
